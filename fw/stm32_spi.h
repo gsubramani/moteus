@@ -96,6 +96,95 @@ class Stm32Spi {
     __enable_irq();
   }
 
+  void write_opcode (uint8_t op_code) MOTEUS_CCM_ATTRIBUTE {
+    auto* const spi = spi_.spi.handle.Instance;
+    uint16_t timeout = options_.timeout;
+
+    /* Initial configuration */ 
+    //   setting the DS register to transmit as 8 byte transfers
+    spi->CR2 |= SPI_CR2_DS_2 | SPI_CR2_DS_1 | SPI_CR2_DS_0;
+    spi->CR2 &= ~(SPI_CR2_DS_3);
+    //   pull down CS and enable SPI
+    *cs_ = 0;
+    spi->CR1 |= SPI_CR1_SPE;
+
+    /* writing data */
+    // STEP 1:  write the op_code
+    while (((spi->SR & SPI_SR_BSY) != 0) && timeout) { timeout--; }
+    spi->DR = op_code;
+    
+  }
+
+  uint16_t read_write_two_bytes (uint16_t two_byte_data) MOTEUS_CCM_ATTRIBUTE {
+    auto* const spi = spi_.spi.handle.Instance;
+    uint16_t timeout = options_.timeout;
+
+
+    while (((spi->SR & SPI_SR_RXNE) == 0) && timeout) { timeout--; }
+    // const uint8_t result = spi->DR; // discard this data as the next byte as the good stuff
+    while (((spi->SR & SPI_SR_TXE) == 0) && timeout) { timeout--; }
+    while (((spi->SR & SPI_SR_BSY) != 0) && timeout) { timeout--; }
+
+    //   setting the DS register to transmit as 16 byte transfers
+    spi->CR2 |= SPI_CR2_DS_3 | SPI_CR2_DS_2 | SPI_CR2_DS_1 | SPI_CR2_DS_0;
+
+    //  STEP 2:  write two_byte_data
+    spi->DR = two_byte_data; // the good stuff
+    while (((spi->SR & SPI_SR_RXNE) == 0) && timeout) { timeout--; }
+    const uint16_t result = spi->DR; 
+    while (((spi->SR & SPI_SR_TXE) == 0) && timeout) { timeout--; }
+    while (((spi->SR & SPI_SR_BSY) != 0) && timeout) { timeout--; }
+
+    /* Clearing SPI */
+    spi->CR1 &= ~(SPI_CR1_SPE);
+    *cs_ = 1;
+
+    return result;
+  }
+
+  uint8_t read_write_one_byte (uint8_t one_byte_data)  {
+    auto* const spi = spi_.spi.handle.Instance;
+    uint16_t timeout = options_.timeout;
+
+
+    while (((spi->SR & SPI_SR_RXNE) == 0) && timeout) { timeout--; }
+    // const uint8_t result = spi->DR; // discard this data as the next byte as the good stuff
+    while (((spi->SR & SPI_SR_TXE) == 0) && timeout) { timeout--; }
+    while (((spi->SR & SPI_SR_BSY) != 0) && timeout) { timeout--; }
+
+    //   setting the DS register to transmit as 16 byte transfers
+    spi->CR2 |= SPI_CR2_DS_2 | SPI_CR2_DS_1 | SPI_CR2_DS_0;
+    spi->CR2 &= ~(SPI_CR2_DS_3);
+
+    //  STEP 2:  write one_byte_data
+    spi->DR = one_byte_data; // the good stuff
+    while (((spi->SR & SPI_SR_RXNE) == 0) && timeout) { timeout--; }
+    const uint8_t result = spi->DR; 
+    while (((spi->SR & SPI_SR_TXE) == 0) && timeout) { timeout--; }
+    while (((spi->SR & SPI_SR_BSY) != 0) && timeout) { timeout--; }
+
+    /* Clearing SPI */
+    spi->CR1 &= ~(SPI_CR1_SPE);
+    *cs_ = 1;
+
+    // returning back to 16 bit transfers
+    spi->CR2 |= SPI_CR2_DS_3; // DS[0:1:2] are already set
+
+    return result;
+  }
+
+
+  uint16_t write (uint8_t op_code, uint16_t two_byte_data) MOTEUS_CCM_ATTRIBUTE {
+
+    write_opcode(op_code);
+    return read_write_two_bytes(two_byte_data);
+  }
+
+  uint8_t write  (uint8_t op_code, uint8_t one_byte_data) MOTEUS_CCM_ATTRIBUTE {
+    write_opcode(op_code);
+    return read_write_one_byte(one_byte_data);
+  }
+
   uint16_t write(uint16_t value) MOTEUS_CCM_ATTRIBUTE {
     start_write(value);
     return finish_write();

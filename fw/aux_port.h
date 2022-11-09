@@ -27,6 +27,7 @@
 
 #include "fw/aksim2.h"
 #include "fw/as5047.h"
+#include "fw/LS7366R.h"
 #include "fw/aux_common.h"
 #include "fw/aux_mbed.h"
 #include "fw/ccm.h"
@@ -92,6 +93,11 @@ class AuxPort {
     if (as5047_) {
       as5047_->StartSample();
     }
+
+    if (ls7366r_) {
+      ls7366r_->StartSample();
+    }
+
     if (ic_pz_) {
       ic_pz_->ISR_StartSample();
     }
@@ -103,6 +109,12 @@ class AuxPort {
     if (as5047_) {
       status_.spi.active = true;
       status_.spi.value = as5047_->FinishSample();
+      status_.spi.nonce += 1;
+    }
+
+    if (ls7366r_) {
+      status_.spi.active = true;
+      status_.spi.value = ls7366r_->FinishSample();
       status_.spi.nonce += 1;
     }
 
@@ -697,6 +709,12 @@ class AuxPort {
 
           break;
         }
+        case aux::Spi::Config::kLS7366R: {
+          LS7366R::Options options = spi_options;
+          options.timeout = 200;
+          ls7366r_options_ = options;
+          break;
+        }
         case aux::Spi::Config::kIcPz: {
           IcPz::Options options{spi_options};
           options.timeout = 2000;
@@ -889,6 +907,10 @@ class AuxPort {
   std::optional<AS5047> as5047_;
   std::optional<AS5047::Options> as5047_options_;
   std::optional<IcPz> ic_pz_;
+
+  std::optional<LS7366R> ls7366r_;
+  std::optional<LS7366R::Options> ls7366r_options_;
+  
 
   std::array<std::optional<DigitalIn>,
              aux::AuxConfig::kNumPins> digital_inputs_;

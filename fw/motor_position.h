@@ -50,7 +50,7 @@ class MotorPosition {
       kSineCosine,
       kI2C,
       kSensorless,
-
+      kSpiQuadrature,
       kNumTypes,
     };
     Type type = kNone;
@@ -379,6 +379,7 @@ class MotorPosition {
       // TODO: eventually exclude spi options that are incremental
 
     return config.type == SourceConfig::kSpi ||
+        config.type == SourceConfig::kSpiQuadrature ||
         config.type == SourceConfig::kI2C ||
         config.type == SourceConfig::kHall ||
         config.type == SourceConfig::kSineCosine ||
@@ -414,6 +415,9 @@ class MotorPosition {
 
       switch (source_config.type) {
         case SourceConfig::kSpi: {
+          break;
+        }
+        case SourceConfig::kSpiQuadrature: {
           break;
         }
         case SourceConfig::kI2C: {
@@ -696,6 +700,38 @@ class MotorPosition {
               config.offset, config.sign, config.cpr,
               &status);
           status.active_absolute = true;
+          break;
+        }
+        case SourceConfig::kSpiQuadrature: {
+          /* GURU TODO fill this out */
+          // We check this in HandleConfigUpdate
+          // MJ_ASSERT(config.aux_number == 1);
+
+          const auto* spi_quad_status = &this_aux->spi;
+          if (!spi_quad_status->active) { break; }
+
+          const auto old_raw = status.raw;
+          status.raw = spi_quad_status->value;
+          const auto delta = WrapIntCpr(status.raw - old_raw, config.cpr);
+          status.offset_value = WrapIntCpr(
+              static_cast<int32_t>(status.offset_value + delta * config.sign),
+              config.cpr);
+          status.nonce++;
+          status.active_velocity = true;
+
+          if (!status.active_theta &&
+              config.incremental_index >= 1) {
+            const auto* index_status =
+                &aux_status_[config.incremental_index == 2 ? 1 : 0]->index;
+            // TODO: Maybe optionally require a minimum velocity?
+            if (index_status->value) {
+              // This is our index time.
+              status.offset_value = config.offset;
+              status.active_theta = true;
+              status.active_absolute = true;
+            }
+          }
+          updated = true;
           break;
         }
         case SourceConfig::kUart: {
@@ -1016,6 +1052,7 @@ struct IsEnum<moteus::MotorPosition::SourceConfig::Type> {
         { T::kSineCosine, "sine_cosine" },
         { T::kI2C, "i2c" },
         { T::kSensorless, "sensorless" },
+        { T::kSpiQuadrature, "spiquad" }
       }};
   }
 };

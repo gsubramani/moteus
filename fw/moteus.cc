@@ -246,7 +246,7 @@ int main(void) {
   }();
   MJ_ASSERT(compatible);
 
-  micro::SizedPool<16000> pool;
+  micro::SizedPool<32000> pool;
 
   HardwareUart rs485(&pool, &timer, []() {
       HardwareUart::Options options;

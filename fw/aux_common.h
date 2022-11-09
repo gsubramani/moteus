@@ -29,7 +29,7 @@ struct Spi {
       kDisabled,
       kAs5047,
       kIcPz,
-
+      kLS7366R,
       kNumModes,
     };
     Mode mode = kOnboardAs5047;
@@ -410,6 +410,7 @@ struct IsEnum<moteus::aux::Spi::Config::Mode> {
         { M::kDisabled, "disabled" },
         { M::kAs5047, "ext_as5047" },
         { M::kIcPz, "ic_pz" },
+        { M::kLS7366R, "ext_quad" }
       }};
   }
 };
