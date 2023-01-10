@@ -38,50 +38,99 @@ class LS7366R {
   }
 
   uint16_t Sample() MOTEUS_CCM_ATTRIBUTE {
+    
+    // return InitLogic() ? (spi_.write(0xffff) & 0x3fff) << 2 : 0x00; 
+    return 0;
 
-    if(!initialized_)
-    {
-        Init();
-        initialized_ = true;
-    }
-
-    return (spi_.write(0xffff) & 0x3fff) << 2;
   }
 
   void StartSample() MOTEUS_CCM_ATTRIBUTE {
-
-    if(!initialized_)
-    {
-        Init();
-        initialized_ = true;
-    }
-
-    return spi_.write_opcode(READ_CNTR);
+    // if(InitLogic())
+    // {
+    //   spi_.write_opcode(READ_CNTR);
+    // }  
+    return;
   }
 
   uint16_t FinishSample() MOTEUS_CCM_ATTRIBUTE {
-
-    return (spi_.read_write_two_bytes(0xffff));
+    if(InitLogic())
+    {
+      uint8_t dummy_data[2] = {0};
+      uint8_t count_[2]     = {0};
+      uint32_t count_total  = 0;
+      spi_.write_opcode_with_data(static_cast<uint8_t>(READ_CNTR), 2, dummy_data, count_);
+      count_total = (count_[1]<<8) + count_[0];
+      return count_total;
+    }
+    else
+    {
+      return 0x00;
+    }
   }
-  
+     
  private:
   Stm32Spi spi_;
 
 
-  void Init() MOTEUS_CCM_ATTRIBUTE {
-    
-    spi_.write( static_cast<uint8_t>(WRITE_MDR0), static_cast<uint8_t>(QUADRX4 | FREE_RUN | DISABLE_INDX | FILTER_1));        
-    spi_.write( static_cast<uint8_t>(WRITE_MDR1), static_cast<uint8_t>(EN_CNTR | BYTE_2 | RANGE_LIMIT));
+  bool InitLogic() MOTEUS_CCM_ATTRIBUTE {
 
-    // setting the range of the encoder
-    spi_.write( static_cast<uint8_t>(WRITE_DTR), static_cast<uint16_t>(cpr_));
+    uint8_t dummy_data[2] = {0xFF, 0xFF};
+    if(dummy_data[0]){}
+    switch(state_)
+    {    
+      case LS7366RState::UNINITIALIZED:
+      {
+        uint8_t send_data_mdr0[1] = {MDR0_CONFIG}; if(send_data_mdr0[0]){}
+        uint8_t send_data_mdr1[1] = {MDR1_CONFIG}; if(send_data_mdr1[0]){}
 
+        spi_.write_opcode_with_data(static_cast<uint8_t>(WRITE_MDR0), 1, send_data_mdr0, dummy_data);
+        spi_.write_opcode_with_data(static_cast<uint8_t>(WRITE_MDR1), 1, send_data_mdr1, dummy_data);
+        spi_.write_opcode_with_data(static_cast<uint8_t>(WRITE_DTR),  2, (uint8_t*)&cpr_, dummy_data);
+        
+
+        state_ = LS7366RState::INITIALIZED_UNTESTED;
+      } break;
+      case LS7366RState::INITIALIZED_UNTESTED:
+      {
+        uint8_t mdr0_test_val = 1;
+        uint8_t mdr1_test_val = 1;
+        spi_.write_opcode_with_data(static_cast<uint8_t>(READ_MDR0), 1, dummy_data, &mdr0_test_val);
+        spi_.write_opcode_with_data(static_cast<uint8_t>(READ_MDR1), 1, dummy_data, &mdr1_test_val);
+        
+        if(mdr0_test_val == MDR0_CONFIG && mdr1_test_val == MDR1_CONFIG)
+        {
+          state_ = LS7366RState::INITIALIZED;
+          spi_.write_opcode_with_data(static_cast<uint8_t>(CLR_CNTR), 0, dummy_data, dummy_data);
+        }
+        else
+        {
+          state_ = LS7366RState::UNINITIALIZED;
+        }
+      } break;
+      case LS7366RState::INITIALIZED:
+      default:
+      break;
+    }
+
+    if(LS7366RState::INITIALIZED == state_)
+    {
+      return true;
+    }
+    else
+    {
+      return false;
+    }
   }
-  
-  bool initialized_ = false;
-  const uint16_t cpr_ = 10000;
 
+  const uint16_t cpr_ = 40000;
+  uint16_t count_= 0;
 
+  enum class LS7366RState{
+    UNINITIALIZED,
+    INITIALIZED_UNTESTED,
+    INITIALIZED,
+    INVALID
+  } state_;
   /* Constant variable declarations */
   //LS7366R 4 channel quadrature encoder
 
@@ -138,7 +187,11 @@ class LS7366R {
   const uint8_t WRITE_DTR = 0x98; 
   const uint8_t LOAD_CNTR = 0xE0; 
   const uint8_t LOAD_OTR = 0xE4; 
-  
+
+
+  const uint8_t MDR0_CONFIG = QUADRX4 | MODULO_N | DISABLE_INDX | FILTER_1;
+  const uint8_t MDR1_CONFIG = EN_CNTR | BYTE_2;
+
 };
 
 }

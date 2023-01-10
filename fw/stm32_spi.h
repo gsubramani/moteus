@@ -96,6 +96,100 @@ class Stm32Spi {
     __enable_irq();
   }
 
+  int __attribute__((optimize("O0"))) write_opcode_with_data(uint8_t op_code, uint8_t num_bytes, uint8_t data_tx[], uint8_t data_rx[])
+  {
+    int status = true;
+    auto* const spi = spi_.spi.handle.Instance;
+    uint16_t timeout = options_.timeout;
+    if(num_bytes > 4)
+    {
+      return false;
+    }
+
+    #define WAIT_FOR_STUFF_IN_RX  while (((spi->SR & SPI_SR_RXNE) == 0) && timeout) { timeout--; }
+    #define WAIT_FOR_EMPTY_RX     while (((spi->SR & SPI_SR_RXNE) != 0) && timeout) { timeout--; }
+
+    #define WAIT_FOR_STUFF_IN_TX  while (((spi->SR & SPI_SR_TXE) != 0) && timeout) { timeout--; }
+    #define WAIT_FOR_EMPTY_TX     while (((spi->SR & SPI_SR_TXE) == 0) && timeout) { timeout--; }
+
+    #define WAIT_SPI_NOT_BUSY     while (((spi->SR & SPI_SR_BSY) != 0) && timeout) { timeout--; } 
+
+
+
+    // send the OP CODE
+    // configuring for single byte transfer of the opcode
+    spi->CR2 |= SPI_CR2_DS_2 | SPI_CR2_DS_1 | SPI_CR2_DS_0;
+    spi->CR2 &= ~(SPI_CR2_DS_3);    
+    // enabling the Clock Select and SPI
+    *cs_ = 0;
+    spi->CR1 |= SPI_CR1_SPE;
+
+    WAIT_FOR_EMPTY_TX;
+    
+    // send the OPCODE as an 8 bit transfer
+    // https://www.eevblog.com/forum/microcontrollers/samc21-816-bit-access-to-32-bit-registers-howwhy/
+    (*(volatile uint8_t*)&spi->DR) = op_code; 
+
+    // WAIT_FOR_EMPTY_TX;
+    // WAIT_SPI_NOT_BUSY;       
+    WAIT_FOR_STUFF_IN_RX;
+    
+    // flush the receive buffer
+    volatile uint8_t dummy_data = (*(volatile uint8_t*)&spi->DR);
+    WAIT_SPI_NOT_BUSY;
+
+    if(dummy_data){}
+
+    if(0 == num_bytes)
+    {
+      status = true;
+    }
+    else if(1 == num_bytes)
+    {
+      WAIT_FOR_EMPTY_TX;
+      ((volatile uint8_t*)&spi->DR)[0] = data_tx[0]; // writing dummy data
+      
+      // WAIT_SPI_NOT_BUSY;
+      WAIT_FOR_STUFF_IN_RX;
+      data_rx[0] = ((volatile uint8_t*)&spi->DR)[0];
+      WAIT_SPI_NOT_BUSY;
+      status = true;    
+    }
+    else if(2 == num_bytes)
+    {
+      spi->CR2 |= SPI_CR2_DS_3 | SPI_CR2_DS_2 | SPI_CR2_DS_1 | SPI_CR2_DS_0;
+      uint32_t data_tx_two_bytes = data_tx[0] + (data_tx[1] << 8);
+      uint32_t data_rx_two_bytes = {0};
+
+      WAIT_FOR_EMPTY_TX;
+      spi->DR = data_tx_two_bytes; 
+      
+      WAIT_FOR_STUFF_IN_RX;
+      data_rx_two_bytes = spi->DR;
+
+      data_rx[0] = ((uint8_t*)&data_rx_two_bytes)[0];
+      data_rx[1] = ((uint8_t*)&data_rx_two_bytes)[1];
+      
+      status = true;    
+    }
+    else // we shouldn't get here
+    {
+      status = false;
+    }
+
+    *cs_ = 1;
+    spi->CR1 |= SPI_CR1_SPE;
+
+    return status;
+
+
+    #undef WAIT_FOR_STUFF_IN_RX 
+    #undef WAIT_FOR_EMPTY_RX    
+    #undef WAIT_FOR_STUFF_IN_TX 
+    #undef WAIT_FOR_EMPTY_TX    
+    #undef WAIT_SPI_NOT_BUSY    
+  }
+
   void write_opcode (uint8_t op_code) MOTEUS_CCM_ATTRIBUTE {
     auto* const spi = spi_.spi.handle.Instance;
     uint16_t timeout = options_.timeout;
@@ -111,7 +205,8 @@ class Stm32Spi {
     /* writing data */
     // STEP 1:  write the op_code
     while (((spi->SR & SPI_SR_BSY) != 0) && timeout) { timeout--; }
-    spi->DR = op_code;
+    // https://www.eevblog.com/forum/microcontrollers/samc21-816-bit-access-to-32-bit-registers-howwhy/
+    (*(volatile uint8_t*)&spi->DR) = op_code;
     
   }
 
@@ -119,19 +214,15 @@ class Stm32Spi {
     auto* const spi = spi_.spi.handle.Instance;
     uint16_t timeout = options_.timeout;
 
-
-    while (((spi->SR & SPI_SR_RXNE) == 0) && timeout) { timeout--; }
-    // const uint8_t result = spi->DR; // discard this data as the next byte as the good stuff
-    while (((spi->SR & SPI_SR_TXE) == 0) && timeout) { timeout--; }
-    while (((spi->SR & SPI_SR_BSY) != 0) && timeout) { timeout--; }
-
     //   setting the DS register to transmit as 16 byte transfers
     spi->CR2 |= SPI_CR2_DS_3 | SPI_CR2_DS_2 | SPI_CR2_DS_1 | SPI_CR2_DS_0;
 
+    
+    while (((spi->SR & SPI_SR_TXE) == 0) && timeout) { timeout--; }
     //  STEP 2:  write two_byte_data
     spi->DR = two_byte_data; // the good stuff
     while (((spi->SR & SPI_SR_RXNE) == 0) && timeout) { timeout--; }
-    const uint16_t result = spi->DR; 
+    volatile uint16_t result = spi->DR;
     while (((spi->SR & SPI_SR_TXE) == 0) && timeout) { timeout--; }
     while (((spi->SR & SPI_SR_BSY) != 0) && timeout) { timeout--; }
 
@@ -152,12 +243,14 @@ class Stm32Spi {
     while (((spi->SR & SPI_SR_TXE) == 0) && timeout) { timeout--; }
     while (((spi->SR & SPI_SR_BSY) != 0) && timeout) { timeout--; }
 
-    //   setting the DS register to transmit as 16 byte transfers
+    //   setting the DS register to transmit as 8 byte transfer
     spi->CR2 |= SPI_CR2_DS_2 | SPI_CR2_DS_1 | SPI_CR2_DS_0;
     spi->CR2 &= ~(SPI_CR2_DS_3);
 
     //  STEP 2:  write one_byte_data
-    spi->DR = one_byte_data; // the good stuff
+    // https://www.eevblog.com/forum/microcontrollers/samc21-816-bit-access-to-32-bit-registers-howwhy/
+    (*(volatile uint8_t*)&spi->DR) = one_byte_data;
+
     while (((spi->SR & SPI_SR_RXNE) == 0) && timeout) { timeout--; }
     const uint8_t result = spi->DR; 
     while (((spi->SR & SPI_SR_TXE) == 0) && timeout) { timeout--; }
@@ -168,7 +261,7 @@ class Stm32Spi {
     *cs_ = 1;
 
     // returning back to 16 bit transfers
-    spi->CR2 |= SPI_CR2_DS_3; // DS[0:1:2] are already set
+    // spi->CR2 |= SPI_CR2_DS_3; // DS[0:1:2] are already set
 
     return result;
   }

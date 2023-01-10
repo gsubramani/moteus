@@ -293,6 +293,21 @@ class AuxPort {
         __enable_irq();
       }
     }
+    
+    if (!ls7366r_ && ls7366r_options_) {
+      // We can only start sampling the as5047 after 10ms have passed
+      // since boot.
+      if (timer_->read_ms() > 10) {
+        // We could be operating from an ISR context, so we disable
+        // interrupts before updating it.
+        __disable_irq();
+        status_.error = aux::AuxError::kNone;
+
+        ls7366r_.emplace(*ls7366r_options_);
+        __enable_irq();
+      }
+    }
+
 
     if (ic_pz_) {
       ic_pz_->PollMillisecond();
@@ -614,6 +629,9 @@ class AuxPort {
     as5047_.reset();
     as5047_options_.reset();
 
+    ls7366r_.reset();
+    ls7366r_options_.reset();
+
     for (auto& in : digital_inputs_) { in.reset(); }
     for (auto& out : digital_outputs_) { out.reset(); }
     halla_.reset();
@@ -712,6 +730,9 @@ class AuxPort {
         case aux::Spi::Config::kLS7366R: {
           LS7366R::Options options = spi_options;
           options.timeout = 200;
+          options.mode = 0;
+          options.frequency = 20000000;
+          options.width = 8;
           ls7366r_options_ = options;
           break;
         }
