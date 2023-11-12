@@ -80,8 +80,8 @@ class LS7366R {
     {    
       case LS7366RState::UNINITIALIZED:
       {
-        uint8_t send_data_mdr0[1] = {MDR0_CONFIG}; if(send_data_mdr0[0]){}
-        uint8_t send_data_mdr1[1] = {MDR1_CONFIG}; if(send_data_mdr1[0]){}
+        uint8_t send_data_mdr0[1] = {MDR0_CONFIG};
+        uint8_t send_data_mdr1[1] = {MDR1_CONFIG};
 
         spi_.write_opcode_with_data(static_cast<uint8_t>(WRITE_MDR0), 1, send_data_mdr0, dummy_data);
         spi_.write_opcode_with_data(static_cast<uint8_t>(WRITE_MDR1), 1, send_data_mdr1, dummy_data);
@@ -188,10 +188,8 @@ class LS7366R {
   const uint8_t LOAD_CNTR = 0xE0; 
   const uint8_t LOAD_OTR = 0xE4; 
 
-
-  const uint8_t MDR0_CONFIG = QUADRX4 | MODULO_N | DISABLE_INDX | FILTER_1;
+  const uint8_t MDR0_CONFIG = QUADRX4 | MODULO_N | INDX_RESETC | FILTER_1 | SYNCH_INDX;
   const uint8_t MDR1_CONFIG = EN_CNTR | BYTE_2;
-
 };
 
 }

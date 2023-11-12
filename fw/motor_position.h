@@ -717,20 +717,23 @@ class MotorPosition {
               static_cast<int32_t>(status.offset_value + delta * config.sign),
               config.cpr);
           status.nonce++;
+          // status.active_velocity = true;
+          status.active_absolute = true;
           status.active_velocity = true;
+          status.active_theta = true;
 
-          if (!status.active_theta &&
-              config.incremental_index >= 1) {
-            const auto* index_status =
-                &aux_status_[config.incremental_index == 2 ? 1 : 0]->index;
-            // TODO: Maybe optionally require a minimum velocity?
-            if (index_status->value) {
-              // This is our index time.
-              status.offset_value = config.offset;
-              status.active_theta = true;
-              status.active_absolute = true;
-            }
-          }
+          // if (!status.active_theta &&
+          //     config.incremental_index >= 1) {
+          //   const auto* index_status =
+          //       &aux_status_[config.incremental_index == 2 ? 1 : 0]->index;
+          //   // TODO: Maybe optionally require a minimum velocity?
+          //   if (index_status->value) {
+          //     // This is our index time.
+          //     status.offset_value = config.offset;
+          //     status.active_theta = true;
+          //     status.active_absolute = true;
+          //   }
+          // }
           updated = true;
           break;
         }
